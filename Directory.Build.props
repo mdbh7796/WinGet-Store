@@ -1,0 +1,8 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Disable MrtCore PRI generation (requires VS MSBuild extensions not in Build Tools) -->
+    <EnableCoreMrtTooling>false</EnableCoreMrtTooling>
+  </PropertyGroup>
+
+</Project>

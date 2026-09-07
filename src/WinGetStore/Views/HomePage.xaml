@@ -1,0 +1,161 @@
+<Page
+    x:Class="WinGetStore.Views.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <ScrollViewer Padding="24">
+        <StackPanel Spacing="24" MaxWidth="800" HorizontalAlignment="Left">
+
+            <!-- Header -->
+            <StackPanel Spacing="4">
+                <TextBlock
+                    Text="WinGet Store"
+                    FontSize="32"
+                    FontWeight="Bold"/>
+                <TextBlock
+                    Text="Manage your applications"
+                    FontSize="14"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            </StackPanel>
+
+            <!-- WinGet Status Card -->
+            <Grid
+                Padding="20"
+                CornerRadius="8"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <FontIcon
+                    Grid.Column="0"
+                    Glyph="&#xE774;"
+                    FontSize="32"
+                    Margin="0,0,16,0"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource SystemControlHighlightAccentBrush}"/>
+
+                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="WinGet Status"
+                        FontSize="16"
+                        FontWeight="SemiBold"/>
+                    <TextBlock
+                        x:Name="WinGetVersionText"
+                        Text="Detecting..."
+                        FontSize="13"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                </StackPanel>
+
+                <ProgressRing
+                    x:Name="StatusLoadingRing"
+                    IsActive="False"
+                    Width="24"
+                    Height="24"
+                    Grid.Column="1"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- Stats Row -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Updates Card -->
+                <Grid
+                    Grid.Column="0"
+                    Padding="16"
+                    CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                    <StackPanel Spacing="4">
+                        <TextBlock
+                            Text="&#xE777;"
+                            FontFamily="Segoe MDL2 Assets"
+                            FontSize="24"
+                            Foreground="{ThemeResource SystemControlHighlightAccentBrush}"/>
+                        <TextBlock
+                            x:Name="UpdateCountText"
+                            Text="0"
+                            FontSize="28"
+                            FontWeight="Bold"/>
+                        <TextBlock
+                            Text="Updates Available"
+                            FontSize="12"
+                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Last Checked Card -->
+                <Grid
+                    Grid.Column="1"
+                    Padding="16"
+                    CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                    <StackPanel Spacing="4">
+                        <TextBlock
+                            Text="&#xE787;"
+                            FontFamily="Segoe MDL2 Assets"
+                            FontSize="24"
+                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBlock
+                            x:Name="LastCheckedText"
+                            Text="Never"
+                            FontSize="28"
+                            FontWeight="Bold"/>
+                        <TextBlock
+                            Text="Last Checked"
+                            FontSize="12"
+                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Quick Actions Card -->
+                <Grid
+                    Grid.Column="2"
+                    Padding="16"
+                    CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                    <StackPanel Spacing="8">
+                        <TextBlock
+                            Text="Quick Actions"
+                            FontSize="14"
+                            FontWeight="SemiBold"/>
+                        <Button
+                            x:Name="CheckUpdatesButton"
+                            Content="Check for Updates"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Click="CheckUpdatesButton_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+
+            <!-- Error Display -->
+            <InfoBar
+                x:Name="ErrorBar"
+                Severity="Error"
+                IsOpen="False"
+                IsClosable="True"
+                Visibility="Collapsed"
+                Margin="0,0,0,8"/>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,96 @@
+<Page
+    x:Class="WinGetStore.Views.HistoryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Grid Padding="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock
+                    Text="History"
+                    FontSize="32"
+                    FontWeight="Bold"/>
+                <TextBlock
+                    x:Name="CountText"
+                    Text="No entries"
+                    FontSize="14"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            </StackPanel>
+
+            <Button
+                Grid.Column="1"
+                Content="Clear All"
+                VerticalAlignment="Center"
+                Click="ClearButton_Click"/>
+        </Grid>
+
+        <!-- Search -->
+        <AutoSuggestBox
+            Grid.Row="1"
+            x:Name="SearchBox"
+            PlaceholderText="Search history..."
+            QueryIcon="Find"
+            MaxWidth="400"
+            HorizontalAlignment="Left"
+            Margin="0,0,0,16"
+            TextChanged="SearchBox_TextChanged"/>
+
+        <!-- Content -->
+        <Grid Grid.Row="2">
+            <!-- Empty State -->
+            <StackPanel
+                x:Name="EmptyPanel"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="8">
+                <TextBlock
+                    Text="&#xE81C;"
+                    FontFamily="Segoe MDL2 Assets"
+                    FontSize="48"
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBlock
+                    Text="No history entries"
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    HorizontalAlignment="Center"/>
+                <TextBlock
+                    Text="Package operations will appear here."
+                    FontSize="14"
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            </StackPanel>
+
+            <!-- History List -->
+            <ListView
+                x:Name="HistoryListView"
+                Visibility="Collapsed"
+                SelectionMode="None"
+                IsItemClickEnabled="False">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                    </Style>
+                </ListView.ItemContainerStyle>
+            </ListView>
+        </Grid>
+    </Grid>
+</Page>
