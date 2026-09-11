@@ -107,4 +107,18 @@ public class ProcessServiceTests
         Assert.True(result.Success);
         Assert.Contains("Hello World", result.StandardOutput);
     }
+
+    [Fact]
+    public async Task RunAsync_ArgumentWithQuotes_PreservesValue()
+    {
+        var result = await _processService.RunAsync(
+            "cmd.exe",
+            new[] { "/c", "echo", "quoted \"value\"" },
+            CancellationToken.None,
+            TimeSpan.FromSeconds(5));
+
+        Assert.True(result.Success);
+        Assert.Contains("quoted", result.StandardOutput);
+        Assert.Contains("value", result.StandardOutput);
+    }
 }

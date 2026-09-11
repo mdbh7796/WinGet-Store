@@ -1,84 +1,66 @@
-# WinGet Store - MSIX Build Script
 param(
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$Runtime = "win-x64",
+    [string]$SdkVersion = "",
+    [string]$CertificatePath = "",
+    [SecureString]$CertificatePassword
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = $PSScriptRoot
-$MsixOutput = Join-Path $ScriptDir "dist"
+$scriptDir = $PSScriptRoot
+$msixOutput = Join-Path $scriptDir "dist"
+$publishDir = Join-Path $env:TEMP "WinGetStore-msix-build"
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " WinGet Store - MSIX Build" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-
-# Step 1: Publish
-Write-Host "[1/5] Publishing application ($Configuration)..." -ForegroundColor Yellow
-$publishDir = "C:\Users\MDBH\Temp\msix-build"
+Write-Host "WinGet Store - MSIX build" -ForegroundColor Cyan
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 
-dotnet publish "src\WinGetStore" -c $Configuration -r win-x64 --self-contained false -o $publishDir
-if ($LASTEXITCODE -ne 0) { throw "Build failed!" }
+dotnet publish (Join-Path $scriptDir "src\WinGetStore") `
+    -c $Configuration -r $Runtime --self-contained false -o $publishDir
+if ($LASTEXITCODE -ne 0) { throw "Publish failed." }
 
-# Step 2: Copy manifest and assets
-Write-Host "[2/5] Copying manifest and assets..." -ForegroundColor Yellow
-New-Item -ItemType Directory -Path "$publishDir\Assets" -Force | Out-Null
-Copy-Item "src\WinGetStore\Package.appxmanifest" "$publishDir\AppxManifest.xml" -Force
-Copy-Item "src\WinGetStore\Assets\*" "$publishDir\Assets" -Recurse -Force
+New-Item -ItemType Directory -Path (Join-Path $publishDir "Assets") -Force | Out-Null
+Copy-Item (Join-Path $scriptDir "src\WinGetStore\Package.appxmanifest") `
+    (Join-Path $publishDir "AppxManifest.xml") -Force
+Copy-Item (Join-Path $scriptDir "src\WinGetStore\Assets\*") `
+    (Join-Path $publishDir "Assets") -Recurse -Force
 
-# Step 3: Create MSIX
-Write-Host "[3/5] Creating MSIX package..." -ForegroundColor Yellow
-New-Item -ItemType Directory -Path $MsixOutput -Force | Out-Null
-$msixPath = Join-Path $MsixOutput "WinGetStore.msix"
-
-$sdkVersion = "10.0.22621.0"
-$makeappx = "C:\Program Files (x86)\Windows Kits\10\bin\$sdkVersion\x64\makeappx.exe"
-& $makeappx pack /d $publishDir /p $msixPath /o
-if ($LASTEXITCODE -ne 0) { throw "MSIX creation failed!" }
-
-# Step 4: Create/reuse signing certificate
-Write-Host "[4/5] Signing MSIX..." -ForegroundColor Yellow
-
-$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq "CN=WinGetStore" } | Select-Object -First 1
-if (-not $cert) {
-    $cert = New-SelfSignedCertificate `
-        -Type CodeSigningCert `
-        -Subject "CN=WinGetStore" `
-        -CertStoreLocation "Cert:\CurrentUser\My" `
-        -KeyAlgorithm RSA `
-        -KeyLength 2048 `
-        -KeyUsage DigitalSignature `
-        -HashAlgorithm SHA256 `
-        -NotAfter (Get-Date).AddYears(5) `
-        -FriendlyName "WinGet Store"
-    Write-Host "  Created signing certificate." -ForegroundColor Green
+New-Item -ItemType Directory -Path $msixOutput -Force | Out-Null
+$msixPath = Join-Path $msixOutput "WinGetStore.msix"
+$kitRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+if ([string]::IsNullOrWhiteSpace($SdkVersion)) {
+    $SdkVersion = (Get-ChildItem $kitRoot -Directory | Sort-Object Name -Descending |
+        Select-Object -First 1).Name
+}
+$makeAppx = Join-Path $kitRoot "$SdkVersion\x64\makeappx.exe"
+if (-not (Test-Path $makeAppx)) {
+    throw "makeappx.exe was not found. Specify -SdkVersion or install the Windows SDK."
 }
 
-# Step 5: Sign
-$pfxPath = Join-Path $MsixOutput "WinGetStore.pfx"
-$password = "WinGetStore123"
-$secPwd = ConvertTo-SecureString -String $password -Force -AsPlainText
-if (-not (Test-Path $pfxPath)) {
-    Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $secPwd
+& $makeAppx pack /d $publishDir /p $msixPath /o
+if ($LASTEXITCODE -ne 0) { throw "MSIX creation failed." }
+
+if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) {
+    if (-not (Test-Path $CertificatePath)) { throw "Certificate not found: $CertificatePath" }
+    if ($null -eq $CertificatePassword) {
+        throw "CertificatePassword is required when signing."
+    }
+
+    $signTool = Join-Path $kitRoot "$SdkVersion\x64\signtool.exe"
+    if (-not (Test-Path $signTool)) { throw "signtool.exe was not found." }
+    $passwordPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($CertificatePassword)
+    try {
+        $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPtr)
+        & $signTool sign /fd SHA256 /f $CertificatePath /p $password $msixPath
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPtr)
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Signing failed." }
+}
+else {
+    Write-Host "MSIX is unsigned; provide an organization-managed certificate for distribution." `
+        -ForegroundColor Yellow
 }
 
-$signtool = "C:\Program Files (x86)\Windows Kits\10\bin\$sdkVersion\x64\signtool.exe"
-& $signtool sign /fd SHA256 /f $pfxPath /p $password $msixPath
-if ($LASTEXITCODE -ne 0) { throw "Signing failed!" }
-
-# Step 6: Export certificate for distribution
-$cerPath = Join-Path $MsixOutput "WinGetStore.cer"
-Export-Certificate -Cert $cert -FilePath $cerPath -Type CERT
-
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Green
-Write-Host " Build complete!" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
-Write-Host ""
-Write-Host " MSIX:  $msixPath" -ForegroundColor White
-Write-Host " Cert:  $cerPath" -ForegroundColor White
-Write-Host ""
-Write-Host " To install (run as Administrator):" -ForegroundColor Yellow
-Write-Host "   certutil -addstore TrustedPeople `"$cerPath`"" -ForegroundColor Gray
-Write-Host "   Add-AppxPackage -Path `"$msixPath`"" -ForegroundColor Gray
-Write-Host ""
-Write-Host " Or run: .\dist\install.ps1 (as Administrator)" -ForegroundColor Yellow
+Write-Host "MSIX: $msixPath" -ForegroundColor Green
+Write-Host "Install with: Add-AppxPackage -Path `"$msixPath`"" -ForegroundColor Gray

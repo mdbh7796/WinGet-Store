@@ -127,9 +127,8 @@ Firefox                            Mozilla.Firefox           141.0              
 3 upgrades available.";
 
         var results = WinGetService.ParseTableOutput<PackageUpdate>(output);
-        Assert.Equal(2, results.Count);
+        Assert.Single(results);
         Assert.Equal("Firefox", results[0].Name);
-        Assert.Equal("3 upgrades available.", results[1].Name);
     }
 
     [Fact]
@@ -157,5 +156,20 @@ Advanced Archive Password Recovery                                Elcomsoft.Arch
         Assert.Equal(2, results.Count);
         Assert.Equal("Visual Studio Code", results[0].Name);
         Assert.Equal("Advanced Archive Password Recovery", results[1].Name);
+    }
+
+    [Fact]
+    public void ParseTableOutput_IgnoresNoticesAndMalformedRows()
+    {
+        var output = @"Updating source...
+Name                 Id                  Version
+-------------------------------------------------
+Valid App             Contoso.Valid       1.0
+source unavailable";
+
+        var results = WinGetService.ParseTableOutput<Package>(output);
+
+        Assert.Single(results);
+        Assert.Equal("Contoso.Valid", results[0].Id);
     }
 }

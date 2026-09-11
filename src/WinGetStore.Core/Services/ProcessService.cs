@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using WinGetStore.Services.Interfaces;
 
 namespace WinGetStore.Services;
@@ -15,52 +16,52 @@ public class ProcessService : IProcessService
         Action<string>? onStandardOutput = null,
         Action<string>? onStandardError = null)
     {
-        var effectiveTimeout = timeout ?? DefaultTimeout;
         var result = new ProcessResult();
+        var stdoutBuilder = new StringBuilder();
+        var stderrBuilder = new StringBuilder();
 
-        var startInfo = new ProcessStartInfo
+        if (cancellationToken.IsCancellationRequested)
         {
-            FileName = fileName,
-            Arguments = string.Join(" ", arguments.Select(EscapeArgument)),
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = System.Text.Encoding.UTF8,
-            StandardErrorEncoding = System.Text.Encoding.UTF8
-        };
+            result.Cancelled = true;
+            return result;
+        }
 
-        using var process = new Process { StartInfo = startInfo };
-
-        var stdoutBuilder = new System.Text.StringBuilder();
-        var stderrBuilder = new System.Text.StringBuilder();
-
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-            {
-                lock (stdoutBuilder)
-                {
-                    stdoutBuilder.AppendLine(e.Data);
-                }
-                onStandardOutput?.Invoke(e.Data);
-            }
-        };
-
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-            {
-                lock (stderrBuilder)
-                {
-                    stderrBuilder.AppendLine(e.Data);
-                }
-                onStandardError?.Invoke(e.Data);
-            }
-        };
+        var effectiveTimeout = timeout ?? DefaultTimeout;
+        if (effectiveTimeout < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Timeout must not be negative.");
 
         try
         {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            // ArgumentList delegates quoting and escaping to the runtime. Building
+            // Arguments manually breaks arguments containing quotes or backslashes.
+            foreach (var argument in arguments ?? throw new ArgumentNullException(nameof(arguments)))
+                startInfo.ArgumentList.Add(argument);
+
+            using var process = new Process { StartInfo = startInfo };
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is null) return;
+                lock (stdoutBuilder) stdoutBuilder.AppendLine(e.Data);
+                try { onStandardOutput?.Invoke(e.Data); } catch { /* callbacks must not stop capture */ }
+            };
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is null) return;
+                lock (stderrBuilder) stderrBuilder.AppendLine(e.Data);
+                try { onStandardError?.Invoke(e.Data); } catch { /* callbacks must not stop capture */ }
+            };
+
             process.Start();
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
@@ -72,59 +73,45 @@ public class ProcessService : IProcessService
             try
             {
                 await process.WaitForExitAsync(linkedCts.Token);
+                result.ExitCode = process.ExitCode;
             }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested &&
+                                                     !cancellationToken.IsCancellationRequested)
             {
                 result.TimedOut = true;
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch
-                {
-                    // Process may have already exited
-                }
-                return result;
+                Kill(process);
             }
             catch (OperationCanceledException)
             {
                 result.Cancelled = true;
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch
-                {
-                    // Process may have already exited
-                }
-                return result;
+                Kill(process);
             }
 
-            result.ExitCode = process.ExitCode;
+            // WaitForExit() is required after the async wait so redirected output
+            // events queued by the process are delivered before returning.
+            if (!process.HasExited)
+                Kill(process);
+            process.WaitForExit();
         }
         catch (Exception ex)
         {
             result.ExitCode = -1;
-            result.StandardError = ex.Message;
-            return result;
+            lock (stderrBuilder) stderrBuilder.AppendLine(ex.Message);
         }
 
         result.StandardOutput = stdoutBuilder.ToString().Trim();
         result.StandardError = stderrBuilder.ToString().Trim();
-
         return result;
     }
 
-    private static string EscapeArgument(string arg)
+    private static void Kill(Process process)
     {
-        if (string.IsNullOrEmpty(arg))
-            return "\"\"";
-
-        if (arg.Contains(' ') || arg.Contains('"'))
+        try
         {
-            return "\"" + arg.Replace("\"", "\\\"") + "\"";
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
         }
-
-        return arg;
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
     }
 }

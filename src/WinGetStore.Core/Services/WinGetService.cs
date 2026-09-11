@@ -43,10 +43,12 @@ public class WinGetService : IWinGetService
             }
             else
             {
-                result.ErrorMessage = !string.IsNullOrWhiteSpace(processResult.StandardError)
-                    ? processResult.StandardError
-                    : "WinGet returned non-zero exit code";
+                result.ErrorMessage = GetFailureMessage("WinGet detection", processResult);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -80,9 +82,7 @@ public class WinGetService : IWinGetService
         {
             return new WinGetResult
             {
-                Error = !string.IsNullOrWhiteSpace(processResult.StandardError)
-                    ? processResult.StandardError
-                    : $"Search failed with exit code {processResult.ExitCode}"
+                Error = GetFailureMessage("Search", processResult)
             };
         }
 
@@ -106,8 +106,7 @@ public class WinGetService : IWinGetService
             cancellationToken,
             TimeSpan.FromSeconds(60));
 
-        if (!processResult.Success)
-            return Array.Empty<Package>();
+        EnsureSuccess("List installed packages", processResult, cancellationToken);
 
         return ParseTableOutput<Package>(processResult.StandardOutput);
     }
@@ -128,8 +127,7 @@ public class WinGetService : IWinGetService
             cancellationToken,
             TimeSpan.FromSeconds(60));
 
-        if (!processResult.Success)
-            return Array.Empty<PackageUpdate>();
+        EnsureSuccess("Find package updates", processResult, cancellationToken);
 
         return ParseUpgradeOutput(processResult.StandardOutput);
     }
@@ -139,6 +137,9 @@ public class WinGetService : IWinGetService
         string? source = null,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(packageId))
+            return OperationResult.Failed("Package ID cannot be empty");
+
         var arguments = new List<string>
         {
             "install", packageId,
@@ -160,6 +161,9 @@ public class WinGetService : IWinGetService
         string packageId,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(packageId))
+            return OperationResult.Failed("Package ID cannot be empty");
+
         var arguments = new List<string>
         {
             "upgrade", packageId,
@@ -190,6 +194,9 @@ public class WinGetService : IWinGetService
         string packageId,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(packageId))
+            return OperationResult.Failed("Package ID cannot be empty");
+
         var arguments = new List<string>
         {
             "uninstall", packageId,
@@ -205,6 +212,9 @@ public class WinGetService : IWinGetService
         string? source = null,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(packageId))
+            return null;
+
         var arguments = new List<string>
         {
             "show", packageId,
@@ -224,8 +234,7 @@ public class WinGetService : IWinGetService
             cancellationToken,
             TimeSpan.FromSeconds(30));
 
-        if (!processResult.Success)
-            return null;
+        EnsureSuccess("Show package details", processResult, cancellationToken);
 
         return ParseShowOutput(processResult.StandardOutput, packageId);
     }
@@ -242,19 +251,45 @@ public class WinGetService : IWinGetService
             timeout ?? TimeSpan.FromMinutes(5));
 
         if (processResult.TimedOut)
-            return OperationResult.Failed("Operation timed out");
+            return OperationResult.Failed("WinGet operation timed out.");
 
         if (processResult.Cancelled)
-            return OperationResult.Failed("Operation was cancelled");
+            return OperationResult.Failed("WinGet operation was cancelled.");
 
         if (processResult.ExitCode == 0)
             return OperationResult.Succeeded(processResult.StandardOutput);
 
-        var errorMessage = !string.IsNullOrWhiteSpace(processResult.StandardError)
-            ? processResult.StandardError
-            : processResult.StandardOutput;
+        var errorMessage = GetFailureMessage("WinGet operation", processResult);
 
         return OperationResult.Failed(errorMessage, processResult.ExitCode);
+    }
+
+    private static void EnsureSuccess(
+        string operation,
+        ProcessResult processResult,
+        CancellationToken cancellationToken)
+    {
+        if (processResult.Success)
+            return;
+
+        if (processResult.Cancelled)
+            throw new OperationCanceledException(cancellationToken);
+
+        throw new WinGetServiceException(operation, GetFailureMessage(operation, processResult),
+            processResult.ExitCode, processResult.TimedOut);
+    }
+
+    private static string GetFailureMessage(string operation, ProcessResult processResult)
+    {
+        if (processResult.TimedOut)
+            return $"{operation} timed out.";
+        if (processResult.Cancelled)
+            return $"{operation} was cancelled.";
+        if (!string.IsNullOrWhiteSpace(processResult.StandardError))
+            return processResult.StandardError.Trim();
+        if (!string.IsNullOrWhiteSpace(processResult.StandardOutput))
+            return processResult.StandardOutput.Trim();
+        return $"{operation} failed with exit code {processResult.ExitCode}.";
     }
 
     internal static IReadOnlyList<T> ParseTableOutput<T>(string output) where T : class, new()
@@ -262,16 +297,15 @@ public class WinGetService : IWinGetService
         if (string.IsNullOrWhiteSpace(output))
             return Array.Empty<T>();
 
-        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var lines = output.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
         if (lines.Length < 2)
             return Array.Empty<T>();
 
-        var headerLine = lines[0];
         var separatorIndex = -1;
 
         for (int i = 1; i < lines.Length; i++)
         {
-            if (lines[i].TrimStart().StartsWith("---"))
+            if (IsSeparator(lines[i]))
             {
                 separatorIndex = i;
                 break;
@@ -281,6 +315,9 @@ public class WinGetService : IWinGetService
         if (separatorIndex < 0)
             return Array.Empty<T>();
 
+        // WinGet can print source notices before the table. The header is the
+        // line immediately preceding the separator, not necessarily line zero.
+        var headerLine = lines[separatorIndex - 1];
         var columns = ParseColumnPositions(headerLine);
         var results = new List<T>();
 
@@ -288,6 +325,8 @@ public class WinGetService : IWinGetService
         {
             var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
+                continue;
+            if (IsSummaryLine(line))
                 continue;
 
             var values = ExtractColumnValues(line, columns);
@@ -320,7 +359,9 @@ public class WinGetService : IWinGetService
                 }
             }
 
-            if (type.GetProperty("Name")?.GetValue(item) is string name && !string.IsNullOrWhiteSpace(name))
+            if (type.GetProperty("Name")?.GetValue(item) is string name &&
+                !string.IsNullOrWhiteSpace(name) &&
+                IsValidTableRecord(item))
             {
                 results.Add(item);
             }
@@ -334,13 +375,13 @@ public class WinGetService : IWinGetService
         if (string.IsNullOrWhiteSpace(output))
             return new List<PackageUpdate>();
 
-        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var lines = output.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
         var results = new List<PackageUpdate>();
 
         int separatorIndex = -1;
         for (int i = 0; i < lines.Length; i++)
         {
-            if (lines[i].TrimStart().StartsWith("---"))
+            if (IsSeparator(lines[i]))
             {
                 separatorIndex = i;
                 break;
@@ -360,11 +401,14 @@ public class WinGetService : IWinGetService
                 continue;
 
             // Skip summary lines like "3 upgrades available."
-            if (line.Contains("upgrade") && line.Contains("available"))
+            if (IsSummaryLine(line))
                 continue;
 
             var values = ExtractColumnValues(line, columns);
-            if (values.Count >= 4)
+            if (values.Count >= 4 &&
+                !string.IsNullOrWhiteSpace(values[1]) &&
+                !string.IsNullOrWhiteSpace(values[2]) &&
+                !string.IsNullOrWhiteSpace(values[3]))
             {
                 results.Add(new PackageUpdate
                 {
@@ -385,7 +429,9 @@ public class WinGetService : IWinGetService
             return null;
 
         var details = new PackageDetails { Id = packageId };
-        var lines = output.Split('\n');
+        var lines = output.Replace("\r\n", "\n").Split('\n');
+        string? currentKey = null;
+        var tags = new List<string>();
 
         foreach (var line in lines)
         {
@@ -395,10 +441,15 @@ public class WinGetService : IWinGetService
 
             var colonIndex = trimmed.IndexOf(':');
             if (colonIndex <= 0)
+            {
+                if (currentKey == "Tags" && !trimmed.StartsWith("-", StringComparison.Ordinal))
+                    tags.Add(trimmed);
                 continue;
+            }
 
             var key = trimmed[..colonIndex].Trim();
             var value = trimmed[(colonIndex + 1)..].Trim();
+            currentKey = key;
 
             switch (key)
             {
@@ -407,6 +458,9 @@ public class WinGetService : IWinGetService
                     break;
                 case "Version":
                     details.Version = value;
+                    break;
+                case "Id":
+                    details.Id = value;
                     break;
                 case "Publisher":
                     details.Publisher = value;
@@ -427,11 +481,22 @@ public class WinGetService : IWinGetService
                 case "Homepage":
                     details.HomeUrl = value;
                     break;
+                case "Source":
+                    details.Source = value;
+                    break;
+                case "Package Family Name":
+                    details.PackageFamilyName = value;
+                    break;
                 case "License":
                     details.License = value;
                     break;
                 case "Installer Url":
                     details.InstallerUrl = value;
+                    break;
+                case "Tags":
+                    if (!string.IsNullOrWhiteSpace(value))
+                        tags.AddRange(value.Split(',', StringSplitOptions.TrimEntries |
+                            StringSplitOptions.RemoveEmptyEntries));
                     break;
                 case "Installer Type":
                     // Could store if needed
@@ -439,30 +504,28 @@ public class WinGetService : IWinGetService
             }
         }
 
-        // Parse tags
-        var tagLines = output.Split('\n');
-        bool inTags = false;
-        var tags = new List<string>();
-        foreach (var line in tagLines)
-        {
-            var trimmed = line.Trim();
-            if (trimmed == "Tags:")
-            {
-                inTags = true;
-                continue;
-            }
-            if (inTags && !string.IsNullOrEmpty(trimmed) && !trimmed.Contains(':'))
-            {
-                tags.Add(trimmed);
-            }
-            else if (inTags && trimmed.Contains(':'))
-            {
-                inTags = false;
-            }
-        }
-        details.Tags = tags;
+        details.Tags = tags.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         return details;
+    }
+
+    private static bool IsSeparator(string line) =>
+        Regex.IsMatch(line.Trim(), @"^-{3,}$");
+
+    private static bool IsSummaryLine(string line) =>
+        Regex.IsMatch(line.Trim(), @"^\d+\s+(upgrade|package)s?\s+available\.?$",
+            RegexOptions.IgnoreCase);
+
+    private static bool IsValidTableRecord<T>(T item) where T : class
+    {
+        if (item is Package package)
+            return !string.IsNullOrWhiteSpace(package.Id) &&
+                   !string.IsNullOrWhiteSpace(package.Version);
+        if (item is PackageUpdate update)
+            return !string.IsNullOrWhiteSpace(update.Id) &&
+                   !string.IsNullOrWhiteSpace(update.CurrentVersion) &&
+                   !string.IsNullOrWhiteSpace(update.AvailableVersion);
+        return true;
     }
 
     private static List<int> ParseColumnPositions(string headerLine)
