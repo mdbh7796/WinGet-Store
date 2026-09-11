@@ -6,10 +6,15 @@ echo  WinGet Store - MSIX Build Script
 echo ========================================
 echo.
 
-set PROJECT_DIR=%~dp0..
+set PROJECT_DIR=%~dp0
 set PUBLISH_DIR=%PROJECT_DIR%\src\WinGetStore\bin\x64\Release\net8.0-windows10.0.22621.0\publish
 set MSIX_OUTPUT=%PROJECT_DIR%\dist
-set MAKEAPPX="C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\makeappx.exe"
+set MAKEAPPX=
+for /f "delims=" %%I in ('where makeappx.exe 2^>nul') do if not defined MAKEAPPX set MAKEAPPX=%%I
+if not defined MAKEAPPX (
+    echo ERROR: makeappx.exe was not found on PATH. Install the Windows SDK.
+    exit /b 1
+)
 
 echo [1/3] Publishing application...
 dotnet publish "%PROJECT_DIR%\src\WinGetStore\WinGetStore.csproj" -c Release -r win-x64 --self-contained false

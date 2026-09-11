@@ -10,6 +10,7 @@ public partial class DiscoverPageViewModel : ObservableObject
 {
     private readonly IWinGetService _winGetService;
     private CancellationTokenSource? _searchCts;
+    private int _searchGeneration;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -54,7 +55,10 @@ public partial class DiscoverPageViewModel : ObservableObject
         }
 
         _searchCts?.Cancel();
+        _searchCts?.Dispose();
         _searchCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var generation = ++_searchGeneration;
+        var searchToken = _searchCts.Token;
 
         IsLoading = true;
         ErrorMessage = null;
@@ -64,7 +68,9 @@ public partial class DiscoverPageViewModel : ObservableObject
 
         try
         {
-            var result = await _winGetService.SearchPackagesAsync(SearchText.Trim(), _searchCts.Token);
+            var result = await _winGetService.SearchPackagesAsync(SearchText.Trim(), searchToken);
+            if (generation != _searchGeneration || searchToken.IsCancellationRequested)
+                return;
 
             if (!string.IsNullOrEmpty(result.Error))
             {
@@ -84,16 +90,20 @@ public partial class DiscoverPageViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "Search cancelled.";
+            if (generation == _searchGeneration)
+                StatusMessage = "Search cancelled.";
         }
         catch (Exception ex)
         {
+            if (generation != _searchGeneration)
+                return;
             ErrorMessage = $"Search failed: {ex.Message}";
             StatusMessage = "Search failed.";
         }
         finally
         {
-            IsLoading = false;
+            if (generation == _searchGeneration)
+                IsLoading = false;
         }
     }
 

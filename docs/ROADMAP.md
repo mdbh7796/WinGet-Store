@@ -7,7 +7,7 @@
 | .NET SDK | 8.0.424 (LTS) |
 | Target Framework | `net8.0-windows10.0.22621.0` |
 | Min OS Version | Windows 10 1809 (build 17763) |
-| Windows App SDK | 1.6.240923002 |
+| Windows App SDK | 2.1.3 |
 | CommunityToolkit.Mvvm | 8.4.0 |
 | WinUI 3 | via Windows App SDK |
 | Test Framework | xUnit 2.9.2 + Moq 4.20.72 |
@@ -313,4 +313,10 @@ Winget-App/
 | Phase 9 - Testing | ✅ Complete | 39 total |
 | Phase 10 - Release | ✅ Complete | - |
 
-**Overall Progress**: 10/10 phases complete
+**Overall Progress**: 10/10 feature phases complete; release hardening remains ongoing.
+
+## Release hardening status
+
+- Portable distribution is the supported release path.
+- MSIX creation is supported, but packaged activation still requires validation across supported Windows App SDK/runtime combinations.
+- Release signing must use an organization-managed certificate supplied securely at build time; certificates, private keys, and passwords are not stored in the repository.
